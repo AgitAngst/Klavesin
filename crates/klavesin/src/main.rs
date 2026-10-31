@@ -3,7 +3,7 @@
 // В релизе не поднимаем консольное окно на Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use anvil_ui::{Accent, CommonSettings, Icon, Kind, ThemeChoice, chrome, widgets as w};
+use anvil_ui::{Accent, CommonSettings, Icon, Kind, chrome, widgets as w};
 use eframe::egui;
 
 /// Акцент программы — синий набора по умолчанию, пока владелец не выбрал свой.
