@@ -1,6 +1,7 @@
 [package]
 name = "klavesin"
 description = "Настройка мини-клавиатур по USB"
+repository = "https://github.com/AgitAngst/Klavesin"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
