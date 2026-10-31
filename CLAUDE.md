@@ -7,8 +7,7 @@
 
 ## Части
 
-- `crates/klavesin` — окно программы: eframe 0.36.2 + `anvil-ui` (тег набора `kit-v1.0.0`, как у
-  Amber и Morok).
+- `crates/klavesin` — окно программы: eframe 0.36.2 + `anvil-ui` (тег набора `kit-v1.0.0`).
 
 ## Общие скрипты
 
