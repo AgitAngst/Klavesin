@@ -1,0 +1,45 @@
+schema: spec-driven
+
+context: |
+  Language: Russian
+  All artifacts must be written in Russian.
+  Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+
+  Project: Klavesin, a configurator for mini USB keyboards (Rust, egui window on the Anvil kit).
+  Parts: crates/klavesin — the program window (eframe 0.36.2 + anvil-ui, kit tag kit-v1.0.0).
+  Where the project stands and how to work: HANDOFF.md; plan and stages: SPEC.md;
+  docs of what exists now: docs/README.md.
+  Owner rules every artifact must respect:
+  - every UI in the light AND the dark theme and in Russian AND English;
+  - everything printed to a console or a log is in English; code comments are in Russian;
+  - no new dependencies or downloads without the owner's explicit permission;
+  - releases, tags, CI runs and server updates only on the owner's command;
+  - the version grows with the plan: a stage - the second digit +1 from the CURRENT version
+    (after 0.9.x comes 1.0.0), a fix inside a stage - the third; the fourth number is the
+    build = commit count;
+  - any UI work follows docs/ui-guideline.md and the common UX/UI guideline; a new visual
+    rule or an owner decision goes into the program guideline in the same step;
+  - tasks include their tests and the doc updates (docs/, HANDOFF.md, SPEC.md) the change
+    needs; nothing is marked verified live without the owner's words.
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always state what is out of scope
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing

@@ -1,0 +1,12 @@
+[package]
+name = "klavesin"
+description = "Настройка мини-клавиатур по USB"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Общий вид семьи: палитра, значки, кнопки, каркас окна. Тег набора, как у Amber и Morok.
+anvil-ui = { git = "https://github.com/AgitAngst/Anvil", tag = "kit-v1.0.0", features = ["serde"] }
+eframe = { version = "0.36.2", features = ["persistence"] }
