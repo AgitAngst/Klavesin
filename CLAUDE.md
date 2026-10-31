@@ -23,8 +23,8 @@
 ## Сборка и проверка (на ПК; CI — только по слову владельца)
 
 - По ходу — только затронутые крейты (`cargo check -p klavesin`, `cargo test -p klavesin`), `-j 4`.
-- Перед сдачей один раз: `python E:/dev_personal/tools/checks.py all` (fmt без `--all`, clippy
-  `-D warnings`, тесты, clippy под Linux через cargo-zigbuild — если есть код под Linux).
+- Перед сдачей один раз: `python E:/dev_personal/tools/checks.py --repo . -j 4 fmt test clippy`
+  (программа только под Windows — шаг `zig` не нужен, как у Kamerton).
 - Результат — по коду выхода; вывод в файл, в разговор хвост.
 
 ## Работа агентов
