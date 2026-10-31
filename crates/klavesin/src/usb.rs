@@ -12,6 +12,8 @@ pub struct Found {
     pub name: String,
     /// Техническая подпись: vid:pid моноширинным.
     pub detail: String,
+    pub vid: u16,
+    pub pid: u16,
 }
 
 /// Опросить USB HID. Без доступа к HID — пустой список, не ошибка.
@@ -36,7 +38,7 @@ pub fn scan() -> Vec<Found> {
             .filter(|s| !s.is_empty())
             .map(str::to_string)
             .unwrap_or_else(|| format!("USB HID {detail}"));
-        found.push(Found { name, detail });
+        found.push(Found { name, detail, vid: d.vendor_id(), pid: d.product_id() });
     }
     found.sort_by(|a, b| a.name.cmp(&b.name));
     found.dedup_by(|a, b| a.name == b.name && a.detail == b.detail);

@@ -79,8 +79,12 @@ pub struct App {
     dirty: bool,
     open_settings: bool,
     open_about: bool,
+    /// Режим подсветки знакомого устройства (0..=3, пресеты прошивки).
+    led_mode: u8,
     /// Последний опрос ничего не нашёл.
     scanned_empty: bool,
+    /// Итог последней записи на устройство: пусто — не записывали.
+    write_note: String,
 }
 
 impl App {
@@ -103,7 +107,9 @@ impl App {
             dirty: false,
             open_settings: false,
             open_about: false,
+            led_mode: 0,
             scanned_empty: false,
+            write_note: String::new(),
         };
         if config.scene != Some(Scene::Empty) {
             app.rescan();
@@ -115,16 +121,81 @@ impl App {
         self.common.language
     }
 
-    /// Опросить USB и перестроить список клавиатур из найденного.
+    /// Опросить USB и перестроить список клавиатур из найденного. Если среди
+    /// устройств есть знакомое (умеем писать конфигурацию) — выбираем его.
     fn rescan(&mut self) {
         let found = crate::usb::scan();
-        self.keyboards = found.into_iter().map(|f| crate::model::from_found(f.name, f.detail)).collect();
-        self.kb = if self.keyboards.is_empty() { None } else { Some(0) };
+        self.keyboards = found.into_iter().map(|f| crate::model::from_found(f.name, f.detail, f.vid, f.pid)).collect();
+        self.kb = if self.keyboards.is_empty() {
+            None
+        } else {
+            Some(self.keyboards.iter().position(|k| k.known).unwrap_or(0))
+        };
         self.scanned_empty = self.keyboards.is_empty();
     }
 
-    /// Запись на устройство (демо: подтверждаем состояние, USB — в 0.3).
+    /// Применить режим подсветки к знакомому устройству (пресеты прошивки).
+    fn set_led_mode(&mut self, mode: u8) {
+        let lang = self.lang();
+        self.led_mode = mode;
+        match crate::device::Device::open() {
+            Ok(dev) => {
+                let frames = crate::device::Device::led_frames(1, mode);
+                self.write_note = match dev.send_frames(&frames) {
+                    Ok(()) => tr(lang, "Подсветка записана на устройство.").to_string(),
+                    Err(e) => format!("{}: {e}", tr(lang, "Ошибка записи")),
+                };
+            }
+            Err(e) => self.write_note = format!("{}: {e}", tr(lang, "Не удалось открыть устройство")),
+        }
+    }
+
+    /// Записать назначения выбранного профиля в устройство.
+    ///
+    /// Знакомые устройства (протокол `device.rs`) принимают конфигурацию;
+    /// текст и макросы прошивка не поддерживает — честно пропускаем и считаем.
     fn write_device(&mut self) {
+        let lang = self.lang();
+        let Some(i) = self.kb else { return };
+        if !self.keyboards[i].known {
+            self.write_note = tr(lang, "Это устройство не поддерживает запись конфигурации.").to_string();
+            return;
+        }
+        let dev = match crate::device::Device::open() {
+            Ok(dev) => dev,
+            Err(e) => {
+                self.write_note = format!("{}: {e}", tr(lang, "Не удалось открыть устройство"));
+                return;
+            }
+        };
+        let kb = &self.keyboards[i];
+        let mut skipped = 0usize;
+        let mut failed: Option<String> = None;
+        'outer: for layer in 0..kb.layers {
+            for (slot, key) in kb.layout.keys.iter().enumerate() {
+                if key.control == 0 {
+                    continue;
+                }
+                let a = &kb.profiles[kb.profile].layers[layer][slot];
+                match assignment_frames(key.control, layer as u8 + 1, a) {
+                    Ok(frames) if frames.is_empty() => {}
+                    Ok(frames) => {
+                        if let Err(e) = dev.send_frames(&frames) {
+                            failed = Some(e);
+                            break 'outer;
+                        }
+                    }
+                    Err(()) => skipped += 1,
+                }
+            }
+        }
+        self.write_note = if let Some(e) = failed {
+            format!("{}: {e}", tr(lang, "Ошибка записи"))
+        } else if skipped > 0 {
+            format!("{} {skipped}", tr(lang, "Не записано назначений (устройство не поддерживает):"))
+        } else {
+            tr(lang, "Записано на клавиатуру").to_string()
+        };
         self.dirty = false;
     }
 }
@@ -267,6 +338,22 @@ impl App {
                 w::switch(ui, &mut self.draft, tr(lang, "Черновик"));
             });
         });
+        if !self.write_note.is_empty() {
+            w::note(ui, self.write_note.clone());
+        }
+        if self.keyboards[i].known {
+            let modes = [
+                tr(lang, "Подсветка: выключена"),
+                tr(lang, "Подсветка: один светодиод"),
+                tr(lang, "Подсветка: бегущий огонь"),
+                tr(lang, "Подсветка: пульс"),
+            ];
+            let options: Vec<(u8, &str)> = modes.iter().enumerate().map(|(n, s)| (n as u8, *s)).collect();
+            let mut mode = self.led_mode;
+            if w::select(ui, &mut mode, &options, 240.0).changed() {
+                self.set_led_mode(mode);
+            }
+        }
         let note = if self.draft {
             tr(
                 lang,
@@ -466,6 +553,25 @@ impl App {
         };
         let _ = chrome::about(ctx, &mut open, &info, None);
         self.open_about = open;
+    }
+}
+
+/// Собрать кадры протокола для назначения. Ok(vec![]) — пустое, не трогаем
+/// устройство; Err(()) — прошивка такое не поддерживает (текст, макросы, слои,
+/// неразбираемое имя клавиши).
+fn assignment_frames(control: u8, layer: u8, a: &Assignment) -> Result<Vec<[u8; 8]>, ()> {
+    let strokes = |m: u8, k: u8| crate::device::Device::strokes_frames(control, layer, &[(m, k)]);
+    match a {
+        Assignment::Empty => Ok(Vec::new()),
+        Assignment::Key(s) => {
+            if let Some(code) = crate::device::media_code(s) {
+                Ok(crate::device::Device::media_frame(control, layer, code))
+            } else {
+                crate::device::parse_shortcut(s).map(|(m, k)| strokes(m, k)).ok_or(())
+            }
+        }
+        Assignment::Shortcut(s) => crate::device::parse_shortcut(s).map(|(m, k)| strokes(m, k)).ok_or(()),
+        Assignment::Text(_) | Assignment::Macro(_) | Assignment::Layer { .. } => Err(()),
     }
 }
 

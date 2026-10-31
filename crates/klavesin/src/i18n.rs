@@ -52,6 +52,15 @@ pub const TABLE: &[(&str, &str)] = &[
     ("Новый профиль…", "New profile…"),
     ("Профиль", "Profile"),
     ("Не выбрано", "None"),
+    ("Это устройство не поддерживает запись конфигурации.", "This device does not support configuration."),
+    ("Не удалось открыть устройство", "Failed to open the device"),
+    ("Ошибка записи", "Write error"),
+    ("Не записано назначений (устройство не поддерживает):", "Assignments not written (unsupported by the device):"),
+    ("Подсветка: выключена", "Backlight: off"),
+    ("Подсветка: один светодиод", "Backlight: one LED"),
+    ("Подсветка: бегущий огонь", "Backlight: colour cycle"),
+    ("Подсветка: пульс", "Backlight: breathing"),
+    ("Подсветка записана на устройство.", "Backlight written to the device."),
 ];
 
 /// Перевод ключа на язык интерфейса; перевода нет — возвращается сам ключ.

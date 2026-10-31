@@ -28,10 +28,12 @@ impl Assignment {
     }
 }
 
-/// Геометрия одной клавиши: сколько колонок занимает (1 или 2).
+/// Геометрия одного элемента карты: сколько колонок занимает (1 или 2) и номер
+/// управления устройства (клавиша 1..=6, ручка 13/14/15; 0 — не привязан).
 #[derive(Clone, Copy)]
 pub struct KeyDef {
     pub units: u8,
+    pub control: u8,
 }
 
 /// Раскладка: число колонок и клавиши по порядку, слева направо, сверху вниз.
@@ -54,6 +56,8 @@ pub struct Keyboard {
     pub name: String,
     /// Техническая подпись устройства (vid:pid), пусто — неизвестно.
     pub detail: String,
+    /// Устройство знакомо: умеем писать конфигурацию (протокол `device.rs`).
+    pub known: bool,
     pub layout: Layout,
     pub profiles: Vec<Profile>,
     /// Выбранный профиль.
@@ -100,16 +104,37 @@ impl Keyboard {
     }
 }
 
-/// Клавиатура из найденного USB-устройства. Раскладка пока условная — один ряд
-/// из трёх клавиш; с 0.4 её заменит редактор раскладок (решение владельца).
-pub fn from_found(name: String, detail: String) -> Keyboard {
-    let keys = vec![KeyDef { units: 1 }; 3];
+/// Клавиатура из найденного USB-устройства. Знакомое (1189:8890) получает свою
+/// карту: три клавиши и ручка (поворот/нажатие/поворот), писать в него умеем.
+/// Остальным — условный ряд из трёх клавиш без записи, до редактора раскладок.
+pub fn from_found(name: String, detail: String, vid: u16, pid: u16) -> Keyboard {
+    let known = vid == crate::device::VID && pid == crate::device::PID;
+    let (cols, keys) = if known {
+        // Клавиши 1–3; ручка: 13 поворот, 14 нажатие, 15 поворот.
+        (
+            3,
+            vec![
+                KeyDef { units: 1, control: 1 },
+                KeyDef { units: 1, control: 2 },
+                KeyDef { units: 1, control: 3 },
+                KeyDef { units: 1, control: 13 },
+                KeyDef { units: 1, control: 14 },
+                KeyDef { units: 1, control: 15 },
+            ],
+        )
+    } else {
+        (3, vec![KeyDef { units: 1, control: 0 }; 3])
+    };
+    let count = keys.len();
     Keyboard {
         name,
         detail,
-        layout: Layout { cols: 3, keys },
+        known,
+        layout: Layout { cols, keys },
         profiles: vec![Profile {
-            name: "Основной".to_string(), main: true, layers: vec![vec![Assignment::Empty; 3]]
+            name: "Основной".to_string(),
+            main: true,
+            layers: vec![vec![Assignment::Empty; count]],
         }],
         profile: 0,
         layer: 0,
@@ -124,8 +149,9 @@ mod tests {
 
     #[test]
     fn found_keyboard_is_consistent() {
-        let kb = from_found("Test Pad".to_string(), "1234:5678".to_string());
+        let kb = from_found("Test Pad".to_string(), "1234:5678".to_string(), 0x1234, 0x5678);
         assert_eq!(kb.key_count(), 3);
+        assert!(!kb.known);
         assert_eq!(kb.layers, 1);
         assert_eq!(kb.profiles.iter().filter(|p| p.main).count(), 1);
         for p in &kb.profiles {
@@ -136,8 +162,17 @@ mod tests {
     }
 
     #[test]
+    fn known_device_has_keys_and_knob() {
+        let kb = from_found("Pad".to_string(), String::new(), 0x1189, 0x8890);
+        assert!(kb.known);
+        assert_eq!(kb.key_count(), 6);
+        assert_eq!(kb.layout.keys[3].control, 13);
+        assert_eq!(kb.layout.keys[5].control, 15);
+    }
+
+    #[test]
     fn add_layer_extends_every_profile() {
-        let mut kb = from_found("Test Pad".to_string(), String::new());
+        let mut kb = from_found("Test Pad".to_string(), String::new(), 0, 0);
         let before = kb.layers;
         kb.add_layer(8);
         assert_eq!(kb.layers, before + 1);
