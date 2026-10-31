@@ -3,11 +3,25 @@
 // В релизе не поднимаем консольное окно на Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use anvil_ui::{Accent, CommonSettings, Icon, Kind, chrome, widgets as w};
+use anvil_ui::{Accent, CommonSettings, Icon, Kind, chrome, theme::Swatch, widgets as w};
 use eframe::egui;
 
-/// Акцент программы — синий набора по умолчанию, пока владелец не выбрал свой.
-const ACCENT: Accent = Accent::BLUE;
+/// Акцент программы — сливовый, 290° (решение владельца 31.10.2026: вместо BLUE).
+/// Контраст не ниже 5.2:1 в обеих темах. Дом здесь, пока не переехал в набор
+/// (`Accent::PLUM`, тест контраста и строка STYLE.md §2.2 — с выпуском набора).
+const ACCENT: Accent = Accent {
+    name: "Plum",
+    dark: Swatch {
+        fill: egui::Color32::from_rgb(0xCB, 0x81, 0xD9),
+        on_fill: egui::Color32::from_rgb(0x17, 0x0A, 0x1A),
+        text: egui::Color32::from_rgb(0xE1, 0xA0, 0xEE),
+    },
+    light: Swatch {
+        fill: egui::Color32::from_rgb(0xAA, 0x39, 0xC0),
+        on_fill: egui::Color32::from_rgb(0xFF, 0xFF, 0xFF),
+        text: egui::Color32::from_rgb(0x79, 0x29, 0x89),
+    },
+};
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
