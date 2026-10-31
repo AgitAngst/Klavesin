@@ -79,6 +79,8 @@ pub struct App {
     dirty: bool,
     open_settings: bool,
     open_about: bool,
+    /// Редактор раскладки выбранного устройства.
+    open_layout: bool,
     /// Режим подсветки знакомого устройства (0..=3, пресеты прошивки).
     led_mode: u8,
     /// Последний опрос ничего не нашёл.
@@ -107,6 +109,7 @@ impl App {
             dirty: false,
             open_settings: false,
             open_about: false,
+            open_layout: false,
             led_mode: 0,
             scanned_empty: false,
             write_note: String::new(),
@@ -132,6 +135,45 @@ impl App {
             Some(self.keyboards.iter().position(|k| k.known).unwrap_or(0))
         };
         self.scanned_empty = self.keyboards.is_empty();
+    }
+
+    /// Редактор раскладки: колонки, ширина клавиш, добавление и удаление.
+    /// Изменения применяются сразу, назначения подравниваются под новую карту.
+    fn layout_editor(&mut self, ui: &mut Ui, i: usize, lang: Lang) {
+        let cols = self.keyboards[i].layout.cols;
+        let mut new_cols = cols;
+        let col_labels: Vec<String> = (1..=8).map(|n| n.to_string()).collect();
+        let col_options: Vec<(u8, &str)> =
+            col_labels.iter().enumerate().map(|(n, s)| ((n + 1) as u8, s.as_str())).collect();
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(tr(lang, "Колонок")).color(Palette::of(ui).text));
+            if w::select(ui, &mut new_cols, &col_options, 72.0).changed() {
+                self.keyboards[i].set_cols(new_cols);
+                self.dirty = true;
+            }
+        });
+        ui.add_space(6.0);
+        let count = self.keyboards[i].layout.keys.len();
+        for idx in 0..count {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(format!("{} {}", tr(lang, "Клавиша"), idx + 1)).color(Palette::of(ui).text));
+                let mut units = self.keyboards[i].layout.keys[idx].units;
+                if w::segmented(ui, &mut units, &[(1u8, None, "1"), (2u8, None, "2")]).changed() {
+                    self.keyboards[i].set_key_units(idx, units);
+                    self.dirty = true;
+                }
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if w::icon_button(ui, Icon::Trash, tr(lang, "Удалить клавишу")).clicked() {
+                        self.keyboards[i].remove_key(idx);
+                        self.dirty = true;
+                    }
+                });
+            });
+        }
+        if w::button(ui, Kind::Ghost, Some(Icon::Plus), tr(lang, "Добавить клавишу")).clicked() {
+            self.keyboards[i].add_key();
+            self.dirty = true;
+        }
     }
 
     /// Применить режим подсветки к знакомому устройству (пресеты прошивки).
@@ -336,6 +378,11 @@ impl App {
                     }
                 });
                 w::switch(ui, &mut self.draft, tr(lang, "Черновик"));
+                // Заводские раскладки знакомых устройств не правим.
+                if !self.keyboards[i].known && w::button(ui, Kind::Secondary, None, tr(lang, "Раскладка…")).clicked()
+                {
+                    self.open_layout = true;
+                }
             });
         });
         if !self.write_note.is_empty() {
@@ -542,6 +589,23 @@ impl App {
                 let common = self.common.clone();
                 common.apply(ctx);
             }
+        }
+        if self.open_layout {
+            let mut open = self.open_layout;
+            let i = self.kb;
+            chrome::dialog(
+                ctx,
+                "klavesin-layout",
+                tr(lang, "Редактор раскладки"),
+                460.0,
+                &mut open,
+                |ui| {
+                    if let Some(i) = i {
+                        self.layout_editor(ui, i, lang);
+                    }
+                },
+            );
+            self.open_layout = open;
         }
         let mut open = self.open_about;
         let info = chrome::AppInfo {

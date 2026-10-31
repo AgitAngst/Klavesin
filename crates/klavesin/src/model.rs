@@ -96,6 +96,47 @@ impl Keyboard {
         self.layers += 1;
     }
 
+    /// Изменить число колонок раскладки.
+    pub fn set_cols(&mut self, cols: u8) {
+        self.layout.cols = cols.max(1);
+    }
+
+    /// Ширина клавиши: 1 или 2 колонки.
+    pub fn set_key_units(&mut self, idx: usize, units: u8) {
+        if let Some(k) = self.layout.keys.get_mut(idx) {
+            k.units = units.clamp(1, 2);
+        }
+    }
+
+    /// Добавить клавишу в конец раскладки (не привязана к устройству).
+    pub fn add_key(&mut self) {
+        self.layout.keys.push(KeyDef { units: 1, control: 0 });
+        self.sync_layers();
+    }
+
+    /// Убрать клавишу из раскладки вместе с её назначениями.
+    pub fn remove_key(&mut self, idx: usize) {
+        if self.layout.keys.len() > 1 && idx < self.layout.keys.len() {
+            self.layout.keys.remove(idx);
+            if self.sel.is_some_and(|s| s >= self.layout.keys.len()) {
+                self.sel = None;
+            }
+            self.sync_layers();
+        }
+    }
+
+    /// Привести назначения всех профилей к числу клавиш: лишнее обрезать,
+    /// недостающее дополнить пустыми.
+    fn sync_layers(&mut self) {
+        let count = self.key_count();
+        for p in &mut self.profiles {
+            for l in &mut p.layers {
+                l.truncate(count);
+                l.resize(count, Assignment::Empty);
+            }
+        }
+    }
+
     /// Новый профиль: пустые назначения на всех слоях.
     pub fn add_profile(&mut self, name: String) {
         let layers = (0..self.layers).map(|_| vec![Assignment::Empty; self.key_count()]).collect();
@@ -168,6 +209,35 @@ mod tests {
         assert_eq!(kb.key_count(), 6);
         assert_eq!(kb.layout.keys[3].control, 13);
         assert_eq!(kb.layout.keys[5].control, 15);
+    }
+
+    #[test]
+    fn layout_editing_syncs_assignments() {
+        let mut kb = from_found("Pad".to_string(), String::new(), 0x1189, 0x8890);
+        let before = kb.key_count();
+        kb.add_key();
+        assert_eq!(kb.key_count(), before + 1);
+        for p in &kb.profiles {
+            for l in &p.layers {
+                assert_eq!(l.len(), kb.key_count());
+            }
+        }
+        kb.set_key_units(0, 2);
+        assert_eq!(kb.layout.keys[0].units, 2);
+        kb.set_cols(4);
+        assert_eq!(kb.layout.cols, 4);
+        kb.remove_key(0);
+        assert_eq!(kb.key_count(), before);
+        for p in &kb.profiles {
+            for l in &p.layers {
+                assert_eq!(l.len(), kb.key_count());
+            }
+        }
+        // Последнюю клавишу удалить нельзя: карта не пустеет.
+        for _ in 0..16 {
+            kb.remove_key(0);
+        }
+        assert_eq!(kb.key_count(), 1);
     }
 
     #[test]
