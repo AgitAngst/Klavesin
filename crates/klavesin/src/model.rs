@@ -1,7 +1,7 @@
 //! Данные программы: клавиатуры, раскладки, профили, назначения клавиш.
 //!
-//! Сейчас список клавиатур — выдуманный демо-набор (публичный репозиторий:
-//! только выдуманные данные). С 0.3 его заменит опрос USB, демо уберут.
+//! Список клавиатур даёт опрос USB (`usb.rs`); раскладка устройства пока
+//! условная — её заменит редактор раскладок (0.4).
 
 /// Что делает клавиша на выбранном слое.
 #[derive(Clone, Debug, PartialEq)]
@@ -50,17 +50,10 @@ pub struct Profile {
     pub layers: Vec<Vec<Assignment>>,
 }
 
-/// Состояние связи с клавиатурой.
-#[derive(Clone, Copy, PartialEq)]
-pub enum Conn {
-    Online,
-    /// На связи не отвечает: жёлтая точка и слово рядом.
-    Silent,
-}
-
 pub struct Keyboard {
     pub name: String,
-    pub conn: Conn,
+    /// Техническая подпись устройства (vid:pid), пусто — неизвестно.
+    pub detail: String,
     pub layout: Layout,
     pub profiles: Vec<Profile>,
     /// Выбранный профиль.
@@ -105,88 +98,24 @@ impl Keyboard {
         self.profiles.push(Profile { name, main: false, layers });
         self.profile = self.profiles.len() - 1;
     }
+}
 
-    fn new(name: &str, conn: Conn, cols: u8, units: &[u8], layers: usize, profile: Profile) -> Self {
-        let mut kb = Keyboard {
-            name: name.to_string(),
-            conn,
-            layout: Layout { cols, keys: units.iter().map(|&u| KeyDef { units: u }).collect() },
-            profiles: Vec::new(),
-            profile: 0,
-            layer: 0,
-            layers: 0,
-            sel: None,
-        };
-        kb.layers = layers;
-        kb.profiles.push(profile);
-        kb
+/// Клавиатура из найденного USB-устройства. Раскладка пока условная — один ряд
+/// из трёх клавиш; с 0.4 её заменит редактор раскладок (решение владельца).
+pub fn from_found(name: String, detail: String) -> Keyboard {
+    let keys = vec![KeyDef { units: 1 }; 3];
+    Keyboard {
+        name,
+        detail,
+        layout: Layout { cols: 3, keys },
+        profiles: vec![Profile {
+            name: "Основной".to_string(), main: true, layers: vec![vec![Assignment::Empty; 3]]
+        }],
+        profile: 0,
+        layer: 0,
+        layers: 1,
+        sel: None,
     }
-}
-
-/// Профиль из готовых назначений первого слоя; остальные слои пустые.
-fn profile(name: &str, main: bool, first: Vec<Assignment>, keys: usize, layers: usize) -> Profile {
-    let mut layers_v = vec![first];
-    layers_v.extend((1..layers).map(|_| vec![Assignment::Empty; keys]));
-    Profile { name: name.to_string(), main, layers: layers_v }
-}
-
-/// Выдуманный демо-набор клавиатур.
-pub fn demo() -> Vec<Keyboard> {
-    // Studio Pad: три ряда по четыре и последний ряд — широкая клавиша и две
-    // обычных: 15 клавиш, 16 колонок.
-    let studio_units = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1];
-    let mut studio = Keyboard::new(
-        "Studio Pad",
-        Conn::Online,
-        4,
-        &studio_units,
-        3,
-        profile(
-            "Стрим",
-            true,
-            vec![
-                Assignment::Key("Esc".into()),
-                Assignment::Shortcut("Ctrl+C".into()),
-                Assignment::Shortcut("Ctrl+V".into()),
-                Assignment::Key("F5".into()),
-                Assignment::Layer { layer: 1, hold: true },
-                Assignment::Empty,
-                Assignment::Text("подпись".into()),
-                Assignment::Shortcut("Alt+F4".into()),
-                Assignment::Macro("Экспорт".into()),
-                Assignment::Key("Space".into()),
-                Assignment::Key("Enter".into()),
-                Assignment::Key("Mute".into()),
-                Assignment::Key("Shift".into()),
-                Assignment::Key("FN".into()),
-                Assignment::Key("ArrowUp".into()),
-            ],
-            studio_units.len(),
-            3,
-        ),
-    );
-    // Как на доске первого экрана: выбрана пятая клавиша (переключение слоя).
-    studio.sel = Some(4);
-
-    let deck = Keyboard::new(
-        "Macro Deck",
-        Conn::Online,
-        4,
-        &[1, 1, 1, 1, 1, 1, 1, 1],
-        2,
-        profile("Работа", true, vec![Assignment::Empty; 8], 8, 2),
-    );
-
-    let field = Keyboard::new(
-        "Field Pad",
-        Conn::Silent,
-        3,
-        &[1, 1, 1, 1, 1, 1],
-        2,
-        profile("Монтаж", true, vec![Assignment::Empty; 6], 6, 2),
-    );
-
-    vec![studio, deck, field]
 }
 
 #[cfg(test)]
@@ -194,22 +123,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn demo_is_consistent() {
-        for kb in demo() {
-            assert!(kb.key_count() > 0);
-            for p in &kb.profiles {
-                assert_eq!(p.layers.len(), kb.layers, "{}: layer count", kb.name);
-                for l in &p.layers {
-                    assert_eq!(l.len(), kb.key_count(), "{}: key count", kb.name);
-                }
+    fn found_keyboard_is_consistent() {
+        let kb = from_found("Test Pad".to_string(), "1234:5678".to_string());
+        assert_eq!(kb.key_count(), 3);
+        assert_eq!(kb.layers, 1);
+        assert_eq!(kb.profiles.iter().filter(|p| p.main).count(), 1);
+        for p in &kb.profiles {
+            for l in &p.layers {
+                assert_eq!(l.len(), kb.key_count());
             }
-            assert_eq!(kb.profiles.iter().filter(|p| p.main).count(), 1, "{}: one main profile", kb.name);
         }
     }
 
     #[test]
     fn add_layer_extends_every_profile() {
-        let mut kb = demo().into_iter().next().unwrap();
+        let mut kb = from_found("Test Pad".to_string(), String::new());
         let before = kb.layers;
         kb.add_layer(8);
         assert_eq!(kb.layers, before + 1);

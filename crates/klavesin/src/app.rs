@@ -1,13 +1,11 @@
 //! Окно программы: шапка, список клавиатур, карта клавиш, профили, строка состояния.
 //! Вид — по docs/ui-guideline.md и доске первого экрана (решения владельца 31.10.2026).
 
-use std::time::{Duration, Instant};
-
 use anvil_ui::{CommonSettings, Icon, Kind, Lang, Palette, ThemeChoice, chrome, semibold, widgets as w};
 use eframe::egui::{self, Align, Color32, Layout, Margin, RichText, Stroke, Ui, Vec2};
 
 use crate::i18n::tr;
-use crate::model::{Assignment, Conn, Keyboard};
+use crate::model::{Assignment, Keyboard};
 
 /// Сцена окна для снимков: пустое состояние или обычный экран.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -81,8 +79,6 @@ pub struct App {
     dirty: bool,
     open_settings: bool,
     open_about: bool,
-    /// Идёт опрос USB (демо: ничего не находит, опрос появится в 0.3).
-    scan: Option<Instant>,
     /// Последний опрос ничего не нашёл.
     scanned_empty: bool,
 }
@@ -99,42 +95,32 @@ impl App {
         }
         anvil_ui::install(&cc.egui_ctx, crate::ACCENT, common.theme);
         common.apply(&cc.egui_ctx);
-        let empty = config.scene == Some(Scene::Empty);
-        Self {
+        let mut app = Self {
             common,
-            keyboards: if empty { Vec::new() } else { crate::model::demo() },
-            kb: if empty { None } else { Some(0) },
+            keyboards: Vec::new(),
+            kb: None,
             draft: true,
             dirty: false,
             open_settings: false,
             open_about: false,
-            scan: None,
             scanned_empty: false,
+        };
+        if config.scene != Some(Scene::Empty) {
+            app.rescan();
         }
+        app
     }
 
     fn lang(&self) -> Lang {
         self.common.language
     }
 
-    /// Опрос USB завершился: показываем честный итог.
-    fn scan_tick(&mut self) {
-        if let Some(until) = self.scan
-            && Instant::now() >= until
-        {
-            self.scan = None;
-            self.scanned_empty = true;
-        }
-    }
-
-    fn scanning(&self) -> bool {
-        self.scan.is_some()
-    }
-
-    fn start_scan(&mut self, ui: &Ui) {
-        self.scan = Some(Instant::now() + Duration::from_millis(1500));
-        self.scanned_empty = false;
-        ui.ctx().request_repaint_after(Duration::from_millis(200));
+    /// Опросить USB и перестроить список клавиатур из найденного.
+    fn rescan(&mut self) {
+        let found = crate::usb::scan();
+        self.keyboards = found.into_iter().map(|f| crate::model::from_found(f.name, f.detail)).collect();
+        self.kb = if self.keyboards.is_empty() { None } else { Some(0) };
+        self.scanned_empty = self.keyboards.is_empty();
     }
 
     /// Запись на устройство (демо: подтверждаем состояние, USB — в 0.3).
@@ -145,7 +131,6 @@ impl App {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
-        self.scan_tick();
         let lang = self.lang();
 
         chrome::top_bar(ui, |ui| {
@@ -182,7 +167,7 @@ impl App {
             w::section_label(ui, tr(lang, "Клавиатуры"));
             let mut pick = None;
             for (i, kb) in self.keyboards.iter().enumerate() {
-                let tone = if kb.conn == Conn::Online { w::Tone::Success } else { w::Tone::Warning };
+                let tone = w::Tone::Success;
                 let badge = format!("{} {}", kb.key_count(), tr(lang, "клавиш"));
                 if w::nav_item(ui, self.kb == Some(i), tone, &kb.name, Some((&badge, w::Tone::Neutral))).clicked() {
                     pick = Some(i);
@@ -192,13 +177,8 @@ impl App {
                 self.kb = Some(i);
             }
             ui.add_space(ui.available_height() - 38.0);
-            if self.scanning() {
-                ui.horizontal(|ui| {
-                    anvil_ui::motion::widgets::live_dot(ui, w::Tone::Accent);
-                    ui.label(RichText::new(tr(lang, "Ищем клавиатуры…")).color(Palette::of(ui).weak));
-                });
-            } else if w::button(ui, Kind::Ghost, None, tr(lang, "Обновить список")).clicked() {
-                self.start_scan(ui);
+            if w::button(ui, Kind::Ghost, None, tr(lang, "Обновить список")).clicked() {
+                self.rescan();
             }
         });
     }
@@ -256,15 +236,26 @@ impl App {
     }
 
     fn page_head(&mut self, ui: &mut Ui, i: usize, lang: Lang) {
-        let (name, count) = {
+        let (name, count, detail) = {
             let kb = &self.keyboards[i];
-            (kb.name.clone(), kb.key_count())
+            let mut name = kb.name.clone();
+            // Длинные имена устройств обрезаем, чтобы шапка не теснила действия.
+            if name.chars().count() > 26 {
+                name = format!("{}…", name.chars().take(25).collect::<String>());
+            }
+            (name, kb.key_count(), kb.detail.clone())
         };
         ui.horizontal(|ui| {
             let p = Palette::of(ui);
             ui.label(RichText::new(name).font(semibold(24.0)).color(p.text));
             w::badge(ui, &format!("{count} {}", tr(lang, "клавиш")), w::Tone::Neutral);
             w::badge(ui, "USB", w::Tone::Accent);
+            if !detail.is_empty() {
+                w::mono(ui, &detail, None);
+            }
+        });
+        // Действия — своей строкой, прижатой вправо: в узком окне не теснят имя и бейджи.
+        ui.horizontal(|ui| {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let dirty = self.dirty;
                 ui.add_enabled_ui(!dirty, |ui| {
@@ -420,19 +411,9 @@ impl App {
             ),
         );
         ui.add_space(12.0);
-        let mut start = false;
-        ui.vertical_centered(|ui| {
-            if self.scanning() {
-                ui.horizontal(|ui| {
-                    anvil_ui::motion::widgets::live_dot(ui, w::Tone::Accent);
-                    ui.label(RichText::new(tr(lang, "Ищем клавиатуры…")).color(Palette::of(ui).weak));
-                });
-            } else {
-                start = w::button(ui, Kind::Primary, None, tr(lang, "Найти клавиатуру…")).clicked();
-            }
-        });
-        if start {
-            self.start_scan(ui);
+        if ui.vertical_centered(|ui| w::button(ui, Kind::Primary, None, tr(lang, "Найти клавиатуру…")).clicked()).inner
+        {
+            self.rescan();
         }
         if self.scanned_empty {
             ui.add_space(8.0);
@@ -446,13 +427,10 @@ impl App {
             match self.kb {
                 Some(i) if !self.keyboards.is_empty() => {
                     let kb = &self.keyboards[i];
-                    let (tone, word) = if kb.conn == Conn::Online {
-                        (w::Tone::Success, tr(lang, "подключена"))
-                    } else {
-                        (w::Tone::Warning, tr(lang, "не отвечает"))
-                    };
-                    w::dot(ui, tone);
-                    ui.label(RichText::new(format!("{} {}", kb.name, word)).color(Palette::of(ui).weak));
+                    w::dot(ui, w::Tone::Success);
+                    ui.label(
+                        RichText::new(format!("{} {}", kb.name, tr(lang, "подключена"))).color(Palette::of(ui).weak),
+                    );
                 }
                 _ => {
                     ui.label(RichText::new(tr(lang, "Готов")).color(Palette::of(ui).weak));

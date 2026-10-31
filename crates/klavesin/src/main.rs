@@ -6,6 +6,7 @@
 mod app;
 mod i18n;
 mod model;
+mod usb;
 
 use anvil_ui::{Accent, theme::Swatch};
 use eframe::egui;
