@@ -21,16 +21,16 @@ fn main() -> eframe::Result<()> {
     eframe::run_native("Klavesin", options, Box::new(|cc| Ok(Box::new(Klavesin::new(cc)))))
 }
 
-struct Klavesin {
-    /// Общие настройки набора: тема, язык строк набора. Хранение — с экраном настроек.
-    common: CommonSettings,
-}
+struct Klavesin;
 
 impl Klavesin {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        // Оформление набора: палитра с акцентом, шрифты; тема и язык — из общих настроек.
+        // Хранение настроек между запусками — с экраном настроек.
         let common = CommonSettings::default();
+        anvil_ui::install(&cc.egui_ctx, ACCENT, common.theme);
         common.apply(&cc.egui_ctx);
-        Self { common }
+        Self
     }
 }
 
