@@ -68,6 +68,29 @@ pub fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, String> 
     Ok(config)
 }
 
+const STORAGE_KEY: &str = "klavesin-v1";
+
+/// Устройство, о котором помним между запусками: раскладка и профили.
+/// Ключ — подпись vid:pid (поле detail модели).
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct SavedDevice {
+    key: String,
+    layout: crate::model::Layout,
+    layers: usize,
+    profiles: Vec<crate::model::Profile>,
+    profile: usize,
+}
+
+/// Сохраняемое между запусками состояние программы.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct SavedState {
+    common: CommonSettings,
+    kb: Option<usize>,
+    draft: bool,
+    led_mode: u8,
+    devices: Vec<SavedDevice>,
+}
+
 pub struct App {
     common: CommonSettings,
     keyboards: Vec<Keyboard>,
@@ -87,12 +110,17 @@ pub struct App {
     scanned_empty: bool,
     /// Итог последней записи на устройство: пусто — не записывали.
     write_note: String,
+    /// Память устройств между запусками: раскладки и профили по vid:pid.
+    saved: Vec<SavedDevice>,
 }
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, config: &Config) -> Self {
         // Оформление набора: палитра с акцентом, шрифты; тема и язык — из общих настроек.
-        let mut common = CommonSettings::default();
+        // Состояние прошлого запуска: тема, язык, профили устройств.
+        let loaded: Option<SavedState> =
+            cc.storage.and_then(|s| s.get_string(STORAGE_KEY)).and_then(|json| serde_json::from_str(&json).ok());
+        let mut common = loaded.as_ref().map(|s| s.common.clone()).unwrap_or_default();
         if let Some(lang) = config.lang {
             common.language = lang;
         }
@@ -101,21 +129,30 @@ impl App {
         }
         anvil_ui::install(&cc.egui_ctx, crate::ACCENT, common.theme);
         common.apply(&cc.egui_ctx);
+        let (saved, kb0, draft0, led0) = loaded.map(|s| (s.devices, s.kb, s.draft, s.led_mode)).unwrap_or_default();
         let mut app = Self {
             common,
             keyboards: Vec::new(),
             kb: None,
-            draft: true,
+            draft: draft0,
             dirty: false,
             open_settings: false,
             open_about: false,
             open_layout: false,
-            led_mode: 0,
+            led_mode: led0,
             scanned_empty: false,
             write_note: String::new(),
+            saved,
         };
         if config.scene != Some(Scene::Empty) {
             app.rescan();
+            // Выбор клавиатуры из прошлого запуска, если она ещё на месте.
+            if app.kb.is_some()
+                && let Some(k) = kb0
+                && k < app.keyboards.len()
+            {
+                app.kb = Some(k);
+            }
         }
         app
     }
@@ -129,6 +166,16 @@ impl App {
     fn rescan(&mut self) {
         let found = crate::usb::scan();
         self.keyboards = found.into_iter().map(|f| crate::model::from_found(f.name, f.detail, f.vid, f.pid)).collect();
+        // Возвращаем устройствам их раскладки и профили из памяти.
+        for kb in &mut self.keyboards {
+            if let Some(s) = self.saved.iter().find(|s| s.key == kb.detail) {
+                kb.layout = s.layout.clone();
+                kb.layers = s.layers;
+                kb.profiles = s.profiles.clone();
+                kb.profile = s.profile.min(kb.profiles.len().saturating_sub(1));
+                kb.layer = kb.layer.min(kb.layers.saturating_sub(1));
+            }
+        }
         self.kb = if self.keyboards.is_empty() {
             None
         } else {
@@ -270,6 +317,33 @@ impl eframe::App for App {
 
     fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
         chrome::clear_color(visuals, crate::ACCENT)
+    }
+
+    /// Сохранение между запусками: тема, язык, выбор, черновик, устройства
+    /// с их раскладками и профилями. Устройство конфигурацию не отдаёт —
+    /// хранит программа.
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        self.saved = self
+            .keyboards
+            .iter()
+            .map(|kb| SavedDevice {
+                key: kb.detail.clone(),
+                layout: kb.layout.clone(),
+                layers: kb.layers,
+                profiles: kb.profiles.clone(),
+                profile: kb.profile,
+            })
+            .collect();
+        let state = SavedState {
+            common: self.common.clone(),
+            kb: self.kb,
+            draft: self.draft,
+            led_mode: self.led_mode,
+            devices: self.saved.clone(),
+        };
+        if let Ok(json) = serde_json::to_string(&state) {
+            storage.set_string(STORAGE_KEY, json);
+        }
     }
 }
 
@@ -734,4 +808,19 @@ fn set_kind(kb: &mut Keyboard, key: usize, kind: usize) {
         3 => Assignment::Macro(prev),
         _ => Assignment::Layer { layer: 0, hold: true },
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn saved_state_serializes() {
+        let state =
+            SavedState { common: CommonSettings::default(), kb: Some(0), draft: true, led_mode: 2, devices: vec![] };
+        let json = serde_json::to_string(&state).expect("SavedState must serialize");
+        let back: SavedState = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.led_mode, 2);
+        assert_eq!(back.kb, Some(0));
+    }
 }

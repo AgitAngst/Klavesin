@@ -4,7 +4,7 @@
 //! условная — её заменит редактор раскладок (0.4).
 
 /// Что делает клавиша на выбранном слое.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Assignment {
     Empty,
     /// Одна клавиша: Enter, F5, Mute.
@@ -30,20 +30,21 @@ impl Assignment {
 
 /// Геометрия одного элемента карты: сколько колонок занимает (1 или 2) и номер
 /// управления устройства (клавиша 1..=6, ручка 13/14/15; 0 — не привязан).
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct KeyDef {
     pub units: u8,
     pub control: u8,
 }
 
 /// Раскладка: число колонок и клавиши по порядку, слева направо, сверху вниз.
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Layout {
     pub cols: u8,
     pub keys: Vec<KeyDef>,
 }
 
 /// Профиль: именованный набор назначений для всех слоев клавиатуры.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Profile {
     pub name: String,
     /// Основной профиль — метка словом, одна клавиатура хранит один такой.
@@ -52,6 +53,7 @@ pub struct Profile {
     pub layers: Vec<Vec<Assignment>>,
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Keyboard {
     pub name: String,
     /// Техническая подпись устройства (vid:pid), пусто — неизвестно.
@@ -209,6 +211,22 @@ mod tests {
         assert_eq!(kb.key_count(), 6);
         assert_eq!(kb.layout.keys[3].control, 13);
         assert_eq!(kb.layout.keys[5].control, 15);
+    }
+
+    #[test]
+    fn keyboard_survives_json_roundtrip() {
+        let mut kb = from_found("Pad".to_string(), "1189:8890".to_string(), 0x1189, 0x8890);
+        kb.add_layer(8);
+        *kb.assignment_mut(0) = Assignment::Shortcut("Ctrl+C".into());
+        let json = serde_json::to_string(&kb).unwrap();
+        let back: Keyboard = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.name, kb.name);
+        assert_eq!(back.detail, kb.detail);
+        assert!(back.known);
+        assert_eq!(back.key_count(), kb.key_count());
+        assert_eq!(back.layers, kb.layers);
+        assert_eq!(back.profiles.len(), kb.profiles.len());
+        assert_eq!(back.profiles[0].layers[0][0], Assignment::Shortcut("Ctrl+C".into()));
     }
 
     #[test]

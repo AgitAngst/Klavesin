@@ -13,3 +13,6 @@ anvil-ui = { git = "https://github.com/AgitAngst/Anvil", tag = "kit-v1.0.0", fea
 eframe = { version = "0.36.2", features = ["persistence"] }
 # Опрос USB HID (решение владельца 31.10.2026: показать реальную клавиатуру). Windows-бэкенд нативный.
 hidapi = "2.6.7"
+# Хранение настроек и профилей между запусками (eframe storage, JSON).
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
