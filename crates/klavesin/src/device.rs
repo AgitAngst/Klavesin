@@ -72,12 +72,13 @@ impl Device {
         frames
     }
 
-    /// Собрать кадры мышиного назначения: кнопки (битовая маска) и колесо.
-    pub fn mouse_frames(control: u8, layer: u8, buttons: u8, wheel: u8) -> Vec<[u8; 8]> {
+    /// Собрать кадры мышиного назначения: кнопки (битовая маска), колесо и
+    /// модификатор (для колеса с клавишей, например Ctrl+колесо — масштаб).
+    pub fn mouse_frames(control: u8, layer: u8, buttons: u8, wheel: u8, modifier: u8) -> Vec<[u8; 8]> {
         let layer = layer.max(1);
         vec![
             [OP_SWITCH_LAYER, layer, 0, 0, 0, 0, 0, 0],
-            [control, (layer << 4) | TYPE_MOUSE, buttons, 0, 0, wheel, 0, 0],
+            [control, (layer << 4) | TYPE_MOUSE, buttons, 0, 0, wheel, modifier, 0],
             [OP_SAVE, OP_SAVE, 0, 0, 0, 0, 0, 0],
         ]
     }
@@ -209,23 +210,36 @@ pub fn parse_strokes(text: &str) -> Option<Vec<(u8, u8)>> {
     strokes.filter(|v| !v.is_empty() && v.len() <= 5)
 }
 
+/// Маска модификаторов из строки без обычной клавиши («Ctrl+Shift»).
+fn mod_mask(text: &str) -> u8 {
+    text.split('+').fold(0, |acc, p| {
+        acc | match p.trim().to_lowercase().as_str() {
+            "ctrl" | "control" => MOD_CTRL,
+            "shift" => MOD_SHIFT,
+            "alt" => MOD_ALT,
+            "win" | "gui" | "meta" => MOD_GUI,
+            _ => 0,
+        }
+    })
+}
+
 /// Разобрать мышиное действие: Left/Right/Middle/WheelUp/WheelDown, опционально
-/// с модификатором («Ctrl+WheelUp»). Возвращает (кнопки, колесо).
-pub fn parse_mouse(text: &str) -> Option<(u8, u8)> {
+/// с модификатором («Ctrl+WheelUp»). Возвращает (кнопки, колесо, модификатор).
+pub fn parse_mouse(text: &str) -> Option<(u8, u8, u8)> {
     let lower = text.trim().to_lowercase();
     let (mods, action) = match lower.split_once('+') {
-        Some((m, a)) => (parse_shortcut(m)?.0, a.trim().to_string()),
+        Some((m, a)) => (mod_mask(m), a.trim().to_string()),
         None => (0, lower),
     };
-    let _ = mods; // модификатор мыши в прошивке — для колеса; кнопки его не берут
-    match action.as_str() {
-        "left" => Some((0x01, 0)),
-        "right" => Some((0x02, 0)),
-        "middle" => Some((0x04, 0)),
-        "wheelup" => Some((0, 0x01)),
-        "wheeldown" => Some((0, 0xFF)),
-        _ => None,
-    }
+    let (buttons, wheel) = match action.as_str() {
+        "left" => (0x01, 0),
+        "right" => (0x02, 0),
+        "middle" => (0x04, 0),
+        "wheelup" => (0, 0x01),
+        "wheeldown" => (0, 0xFF),
+        _ => return None,
+    };
+    Some((buttons, wheel, mods))
 }
 
 #[cfg(test)]
@@ -283,16 +297,16 @@ mod tests {
 
     #[test]
     fn mouse_actions_parse() {
-        assert_eq!(parse_mouse("Left"), Some((0x01, 0)));
-        assert_eq!(parse_mouse("wheelup"), Some((0, 0x01)));
-        assert_eq!(parse_mouse("Ctrl+WheelDown"), Some((0, 0xFF)));
+        assert_eq!(parse_mouse("Left"), Some((0x01, 0, 0)));
+        assert_eq!(parse_mouse("wheelup"), Some((0, 0x01, 0)));
+        assert_eq!(parse_mouse("Ctrl+WheelDown"), Some((0, 0xFF, MOD_CTRL)));
         assert_eq!(parse_mouse("Noise"), None);
     }
 
     #[test]
     fn mouse_frames_follow_protocol() {
-        let frames = Device::mouse_frames(0x03, 1, 0x02, 0);
-        assert_eq!(frames[1], [0x03, 0x13, 0x02, 0, 0, 0, 0, 0]);
+        let frames = Device::mouse_frames(0x03, 1, 0x02, 0, MOD_CTRL);
+        assert_eq!(frames[1], [0x03, 0x13, 0x02, 0, 0, 0, MOD_CTRL, 0]);
     }
 
     #[test]

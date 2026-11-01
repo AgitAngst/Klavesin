@@ -758,7 +758,7 @@ fn assignment_frames(control: u8, layer: u8, a: &Assignment) -> Result<Vec<[u8; 
             .map(|strokes| crate::device::Device::strokes_frames(control, layer, &strokes))
             .ok_or(()),
         Assignment::Mouse(s) => crate::device::parse_mouse(s)
-            .map(|(b, wheel)| crate::device::Device::mouse_frames(control, layer, b, wheel))
+            .map(|(b, wheel, mods)| crate::device::Device::mouse_frames(control, layer, b, wheel, mods))
             .ok_or(()),
         Assignment::Text(_) | Assignment::Layer { .. } => Err(()),
     }
