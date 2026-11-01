@@ -196,7 +196,7 @@ dependencies = [
 [[package]]
 name = "anvil-ui"
 version = "1.0.0"
-source = "git+https://github.com/AgitAngst/Anvil?tag=kit-v1.0.0#5b4e3995ef95085758e38c860de05b4684b197a3"
+source = "git+https://github.com/AgitAngst/Anvil?tag=kit-v1.1.0#29759648fbf43184c9f3ca69ec8cdfe8ea45fda9"
 dependencies = [
  "anvil-wallpaper",
  "eframe",
@@ -208,7 +208,7 @@ dependencies = [
 [[package]]
 name = "anvil-wallpaper"
 version = "1.0.0"
-source = "git+https://github.com/AgitAngst/Anvil?tag=kit-v1.0.0#5b4e3995ef95085758e38c860de05b4684b197a3"
+source = "git+https://github.com/AgitAngst/Anvil?tag=kit-v1.1.0#29759648fbf43184c9f3ca69ec8cdfe8ea45fda9"
 
 [[package]]
 name = "arboard"
@@ -1677,7 +1677,7 @@ checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
 name = "klavesin"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "anvil-ui",
  "eframe",

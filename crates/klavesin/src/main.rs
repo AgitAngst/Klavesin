@@ -10,25 +10,12 @@ mod input;
 mod model;
 mod usb;
 
-use anvil_ui::{Accent, theme::Swatch};
+use anvil_ui::Accent;
 use eframe::egui;
 
-/// Акцент программы — сливовый, 290° (решение владельца 31.10.2026: вместо BLUE).
-/// Контраст не ниже 5.2:1 в обеих темах. Дом здесь, пока не переехал в набор
-/// (`Accent::PLUM`, тест контраста и строка STYLE.md §2.2 — с выпуском набора).
-const ACCENT: Accent = Accent {
-    name: "Plum",
-    dark: Swatch {
-        fill: egui::Color32::from_rgb(0xCB, 0x81, 0xD9),
-        on_fill: egui::Color32::from_rgb(0x17, 0x0A, 0x1A),
-        text: egui::Color32::from_rgb(0xE1, 0xA0, 0xEE),
-    },
-    light: Swatch {
-        fill: egui::Color32::from_rgb(0xAA, 0x39, 0xC0),
-        on_fill: egui::Color32::from_rgb(0xFF, 0xFF, 0xFF),
-        text: egui::Color32::from_rgb(0x79, 0x29, 0x89),
-    },
-};
+/// Акцент программы — сливовый Plum набора (решение владельца 31.10.2026:
+/// вместо BLUE). В наборе с тега `kit-v1.1.0` (`Accent::PLUM`).
+const ACCENT: Accent = Accent::PLUM;
 
 fn main() -> eframe::Result<()> {
     // Всё, что печатается в консоль, — по-английски.
@@ -43,7 +30,9 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_title("Klavesin")
             .with_inner_size([1160.0, 780.0])
-            .with_min_inner_size([980.0, 600.0]),
+            .with_min_inner_size([980.0, 600.0])
+            // Знак программы: квадрат акцента со значком клавиатуры (STYLE.md §6).
+            .with_icon(anvil_ui::appicon::icon_data(ACCENT, anvil_ui::Icon::Keyboard)),
         centered: true,
         ..Default::default()
     };
