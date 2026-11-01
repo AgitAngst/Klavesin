@@ -588,7 +588,7 @@ impl App {
         let mut changed = false;
         w::card_title(ui, Icon::Keyboard, &format!("{} {}", tr(lang, "Назначение клавиши"), key + 1));
 
-        let kinds = ["Клавиша", "Сочетание", "Текст", "Макрос", "Слой"];
+        let kinds = ["Клавиша", "Сочетание", "Текст", "Макрос", "Мышь", "Слой"];
         let options: Vec<(Option<usize>, Option<Icon>, &str)> =
             kinds.iter().enumerate().map(|(n, s)| (Some(n), None, tr(lang, s))).collect();
         let mut kind = kind_of(self.keyboards[i].assignment(key));
@@ -614,7 +614,11 @@ impl App {
                     changed |= field(ui, s, tr(lang, "Текст для вставки")).changed();
                 }
                 Assignment::Macro(s) => {
-                    changed |= field(ui, s, tr(lang, "Имя макроса")).changed();
+                    changed |= field(ui, s, tr(lang, "Последовательность нажатий, до 5: Ctrl+C; Tab; Enter")).changed();
+                }
+                Assignment::Mouse(s) => {
+                    changed |=
+                        field(ui, s, tr(lang, "Кнопка или колесо: Left, Right, Middle, WheelUp, WheelDown")).changed();
                 }
                 Assignment::Layer { layer, hold } => {
                     let labels: Vec<String> =
@@ -750,7 +754,13 @@ fn assignment_frames(control: u8, layer: u8, a: &Assignment) -> Result<Vec<[u8; 
             }
         }
         Assignment::Shortcut(s) => crate::device::parse_shortcut(s).map(|(m, k)| strokes(m, k)).ok_or(()),
-        Assignment::Text(_) | Assignment::Macro(_) | Assignment::Layer { .. } => Err(()),
+        Assignment::Macro(s) => crate::device::parse_strokes(s)
+            .map(|strokes| crate::device::Device::strokes_frames(control, layer, &strokes))
+            .ok_or(()),
+        Assignment::Mouse(s) => crate::device::parse_mouse(s)
+            .map(|(b, wheel)| crate::device::Device::mouse_frames(control, layer, b, wheel))
+            .ok_or(()),
+        Assignment::Text(_) | Assignment::Layer { .. } => Err(()),
     }
 }
 
@@ -809,6 +819,7 @@ fn cap_labels(
         Assignment::Shortcut(s) => (mono(s), sub(tr(lang, "Сочетание"))),
         Assignment::Text(s) => (prop(s), sub(tr(lang, "Текст"))),
         Assignment::Macro(s) => (prop(s), sub(tr(lang, "Макрос"))),
+        Assignment::Mouse(s) => (prop(s), sub(tr(lang, "Мышь"))),
         Assignment::Layer { layer, hold } => {
             let text = format!("{} {}", tr(lang, "Слой"), layer + 1);
             let sub = if *hold { sub(tr(lang, "пока удерживаю")) } else { None };
@@ -842,7 +853,8 @@ fn kind_of(assignment: &Assignment) -> Option<usize> {
         Assignment::Shortcut(_) => Some(1),
         Assignment::Text(_) => Some(2),
         Assignment::Macro(_) => Some(3),
-        Assignment::Layer { .. } => Some(4),
+        Assignment::Mouse(_) => Some(4),
+        Assignment::Layer { .. } => Some(5),
     }
 }
 
@@ -857,6 +869,7 @@ fn set_kind(kb: &mut Keyboard, key: usize, kind: usize) {
         1 => Assignment::Shortcut(prev),
         2 => Assignment::Text(prev),
         3 => Assignment::Macro(prev),
+        4 => Assignment::Mouse("Left".into()),
         _ => Assignment::Layer { layer: 0, hold: true },
     };
 }

@@ -40,6 +40,12 @@ pub const TABLE: &[(&str, &str)] = &[
     ("Сочетание", "Shortcut"),
     ("Текст", "Text"),
     ("Макрос", "Macro"),
+    ("Мышь", "Mouse"),
+    ("Последовательность нажатий, до 5: Ctrl+C; Tab; Enter", "Keystroke sequence, up to 5: Ctrl+C; Tab; Enter"),
+    (
+        "Кнопка или колесо: Left, Right, Middle, WheelUp, WheelDown",
+        "Button or wheel: Left, Right, Middle, WheelUp, WheelDown",
+    ),
     ("Убрать назначение", "Clear"),
     ("пока удерживаю", "while held"),
     ("станет постоянным после записи на клавиатуру", "becomes permanent once written to the keyboard"),

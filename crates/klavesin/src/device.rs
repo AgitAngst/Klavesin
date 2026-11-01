@@ -25,6 +25,7 @@ const OP_LED: u8 = 0xB0;
 
 const TYPE_KEY: u8 = 0x01;
 const TYPE_MEDIA: u8 = 0x02;
+const TYPE_MOUSE: u8 = 0x03;
 const TYPE_LED: u8 = 0x08;
 
 pub const MOD_CTRL: u8 = 0x01;
@@ -69,6 +70,16 @@ impl Device {
         }
         frames.push([OP_SAVE, OP_SAVE, 0, 0, 0, 0, 0, 0]);
         frames
+    }
+
+    /// Собрать кадры мышиного назначения: кнопки (битовая маска) и колесо.
+    pub fn mouse_frames(control: u8, layer: u8, buttons: u8, wheel: u8) -> Vec<[u8; 8]> {
+        let layer = layer.max(1);
+        vec![
+            [OP_SWITCH_LAYER, layer, 0, 0, 0, 0, 0, 0],
+            [control, (layer << 4) | TYPE_MOUSE, buttons, 0, 0, wheel, 0, 0],
+            [OP_SAVE, OP_SAVE, 0, 0, 0, 0, 0, 0],
+        ]
     }
 
     /// Собрать кадры мультимедийного назначения (consumer control).
@@ -191,6 +202,32 @@ pub fn parse_shortcut(text: &str) -> Option<(u8, u8)> {
     key.as_deref().and_then(keycode).map(|k| (mods, k))
 }
 
+/// Разобрать последовательность нажатий «Ctrl+C; Tab; Enter» (до 5).
+pub fn parse_strokes(text: &str) -> Option<Vec<(u8, u8)>> {
+    let strokes: Option<Vec<(u8, u8)>> =
+        text.split(';').map(str::trim).filter(|s| !s.is_empty()).map(parse_shortcut).collect();
+    strokes.filter(|v| !v.is_empty() && v.len() <= 5)
+}
+
+/// Разобрать мышиное действие: Left/Right/Middle/WheelUp/WheelDown, опционально
+/// с модификатором («Ctrl+WheelUp»). Возвращает (кнопки, колесо).
+pub fn parse_mouse(text: &str) -> Option<(u8, u8)> {
+    let lower = text.trim().to_lowercase();
+    let (mods, action) = match lower.split_once('+') {
+        Some((m, a)) => (parse_shortcut(m)?.0, a.trim().to_string()),
+        None => (0, lower),
+    };
+    let _ = mods; // модификатор мыши в прошивке — для колеса; кнопки его не берут
+    match action.as_str() {
+        "left" => Some((0x01, 0)),
+        "right" => Some((0x02, 0)),
+        "middle" => Some((0x04, 0)),
+        "wheelup" => Some((0, 0x01)),
+        "wheeldown" => Some((0, 0xFF)),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,6 +270,29 @@ mod tests {
         assert_eq!(frames[2], [0x02, 0x11, 1, 1, MOD_CTRL, 0x06, 0, 0], "keystroke");
         assert_eq!(frames[3], [0xAA, 0xAA, 0, 0, 0, 0, 0, 0], "save");
         assert_eq!(frames.len(), 4);
+    }
+
+    #[test]
+    fn strokes_sequence_parses() {
+        let v = parse_strokes("Ctrl+C; Tab; Enter").unwrap();
+        assert_eq!(v, vec![(MOD_CTRL, 0x06), (0, 0x2B), (0, 0x28)]);
+        assert!(parse_strokes("").is_none());
+        assert!(parse_strokes("a;b;c;d;e;f").is_none(), "потолок 5 нажатий");
+        assert!(parse_strokes("Ctrl+Noise; Tab").is_none());
+    }
+
+    #[test]
+    fn mouse_actions_parse() {
+        assert_eq!(parse_mouse("Left"), Some((0x01, 0)));
+        assert_eq!(parse_mouse("wheelup"), Some((0, 0x01)));
+        assert_eq!(parse_mouse("Ctrl+WheelDown"), Some((0, 0xFF)));
+        assert_eq!(parse_mouse("Noise"), None);
+    }
+
+    #[test]
+    fn mouse_frames_follow_protocol() {
+        let frames = Device::mouse_frames(0x03, 1, 0x02, 0);
+        assert_eq!(frames[1], [0x03, 0x13, 0x02, 0, 0, 0, 0, 0]);
     }
 
     #[test]

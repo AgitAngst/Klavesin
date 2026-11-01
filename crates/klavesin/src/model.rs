@@ -13,8 +13,10 @@ pub enum Assignment {
     Shortcut(String),
     /// Вставить текст.
     Text(String),
-    /// Макрос по имени.
+    /// Последовательность нажатий: «Ctrl+C; Tab; Enter» (устройство шлёт её само).
     Macro(String),
+    /// Мышиное действие: Left/Right/Middle/WheelUp/WheelDown.
+    Mouse(String),
     /// Переключить или удерживать слой.
     Layer {
         layer: usize,
