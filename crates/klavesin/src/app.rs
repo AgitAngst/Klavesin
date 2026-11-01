@@ -112,6 +112,8 @@ pub struct App {
     write_note: String,
     /// Память устройств между запусками: раскладки и профили по vid:pid.
     saved: Vec<SavedDevice>,
+    /// Показывать в списке весь HID, а не только клавиатуры.
+    show_all_hid: bool,
     /// Нажатия с устройства: слот карты → когда погаснет подсветка.
     pressed: std::collections::HashMap<usize, std::time::Instant>,
     rx: std::sync::mpsc::Receiver<crate::input::Press>,
@@ -149,6 +151,7 @@ impl App {
             scanned_empty: false,
             write_note: String::new(),
             saved,
+            show_all_hid: false,
             pressed: std::collections::HashMap::new(),
             rx,
         };
@@ -172,7 +175,7 @@ impl App {
     /// Опросить USB и перестроить список клавиатур из найденного. Если среди
     /// устройств есть знакомое (умеем писать конфигурацию) — выбираем его.
     fn rescan(&mut self) {
-        let found = crate::usb::scan();
+        let found = crate::usb::scan(self.show_all_hid);
         self.keyboards = found.into_iter().map(|f| crate::model::from_found(f.name, f.detail, f.vid, f.pid)).collect();
         // Возвращаем устройствам их раскладки и профили из памяти.
         for kb in &mut self.keyboards {
@@ -297,6 +300,10 @@ impl App {
             }
         };
         let kb = &self.keyboards[i];
+        if kb.profiles[kb.profile].layers.iter().flatten().all(|a| a.is_empty()) {
+            self.write_note = tr(lang, "Назначений нет — нечего записывать.").to_string();
+            return;
+        }
         let mut skipped = 0usize;
         let mut failed: Option<String> = None;
         'outer: for layer in 0..kb.layers {
@@ -403,8 +410,17 @@ impl App {
             if let Some(i) = pick {
                 self.kb = Some(i);
             }
-            ui.add_space(ui.available_height() - 38.0);
+            ui.add_space(ui.available_height() - 70.0);
             if w::button(ui, Kind::Ghost, None, tr(lang, "Обновить список")).clicked() {
+                self.rescan();
+            }
+            let toggle_label = if self.show_all_hid {
+                tr(lang, "Только клавиатуры")
+            } else {
+                tr(lang, "Показать все HID")
+            };
+            if w::button(ui, Kind::Ghost, None, toggle_label).clicked() {
+                self.show_all_hid = !self.show_all_hid;
                 self.rescan();
             }
         });
@@ -484,13 +500,10 @@ impl App {
         // Действия — своей строкой, прижатой вправо: в узком окне не теснят имя и бейджи.
         ui.horizontal(|ui| {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let dirty = self.dirty;
-                ui.add_enabled_ui(!dirty, |ui| {
-                    if w::button(ui, Kind::Primary, None, tr(lang, "Записать на клавиатуру")).clicked()
-                    {
-                        self.write_device();
-                    }
-                });
+                if w::button(ui, Kind::Primary, None, tr(lang, "Записать на клавиатуру")).clicked()
+                {
+                    self.write_device();
+                }
                 w::switch(ui, &mut self.draft, tr(lang, "Черновик"));
                 // Заводские раскладки знакомых устройств не правим.
                 if !self.keyboards[i].known && w::button(ui, Kind::Secondary, None, tr(lang, "Раскладка…")).clicked()

@@ -19,6 +19,10 @@ const ACCENT: Accent = Accent::PLUM;
 
 fn main() -> eframe::Result<()> {
     // Всё, что печатается в консоль, — по-английски.
+    if std::env::args().any(|a| a == "--probe") {
+        crate::usb::probe();
+        return Ok(());
+    }
     let config = match app::parse_args(std::env::args().skip(1)) {
         Ok(config) => config,
         Err(msg) => {
