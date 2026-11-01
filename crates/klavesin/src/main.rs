@@ -6,6 +6,7 @@
 mod app;
 mod device;
 mod i18n;
+mod input;
 mod model;
 mod usb;
 

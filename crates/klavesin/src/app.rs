@@ -112,6 +112,9 @@ pub struct App {
     write_note: String,
     /// Память устройств между запусками: раскладки и профили по vid:pid.
     saved: Vec<SavedDevice>,
+    /// Нажатия с устройства: слот карты → когда погаснет подсветка.
+    pressed: std::collections::HashMap<usize, std::time::Instant>,
+    rx: std::sync::mpsc::Receiver<crate::input::Press>,
 }
 
 impl App {
@@ -130,6 +133,9 @@ impl App {
         anvil_ui::install(&cc.egui_ctx, crate::ACCENT, common.theme);
         common.apply(&cc.egui_ctx);
         let (saved, kb0, draft0, led0) = loaded.map(|s| (s.devices, s.kb, s.draft, s.led_mode)).unwrap_or_default();
+        // Поток чтения нажатий с устройства.
+        let (tx, rx) = std::sync::mpsc::channel();
+        crate::input::spawn(tx);
         let mut app = Self {
             common,
             keyboards: Vec::new(),
@@ -143,6 +149,8 @@ impl App {
             scanned_empty: false,
             write_note: String::new(),
             saved,
+            pressed: std::collections::HashMap::new(),
+            rx,
         };
         if config.scene != Some(Scene::Empty) {
             app.rescan();
@@ -223,6 +231,37 @@ impl App {
         }
     }
 
+    /// Принять нажатия из потока чтения: найти слот карты, чьё назначение
+    /// даёт такой код, и зажечь его на 400 мс. egui без событий спит, поэтому
+    /// после нажатия заказываем перерисовку на момент затухания.
+    fn poll_input(&mut self, ctx: &egui::Context) {
+        self.pressed.retain(|_, at| at.elapsed() < std::time::Duration::from_millis(400));
+        let mut lit = false;
+        while let Ok((mods, code)) = self.rx.try_recv() {
+            let Some(i) = self.kb else { continue };
+            if !self.keyboards[i].known {
+                continue;
+            }
+            let kb = &self.keyboards[i];
+            for (slot, _) in kb.layout.keys.iter().enumerate() {
+                let a = kb.assignment(slot);
+                let hit = match a {
+                    Assignment::Key(s) | Assignment::Shortcut(s) => {
+                        crate::device::parse_shortcut(s).is_some_and(|(m, k)| m == mods && k == code)
+                    }
+                    _ => false,
+                };
+                if hit {
+                    self.pressed.insert(slot, std::time::Instant::now());
+                    lit = true;
+                }
+            }
+        }
+        if lit {
+            ctx.request_repaint_after(std::time::Duration::from_millis(450));
+        }
+    }
+
     /// Применить режим подсветки к знакомому устройству (пресеты прошивки).
     fn set_led_mode(&mut self, mode: u8) {
         let lang = self.lang();
@@ -291,6 +330,7 @@ impl App {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+        self.poll_input(ui.ctx());
         let lang = self.lang();
 
         chrome::top_bar(ui, |ui| {
@@ -530,8 +570,9 @@ impl App {
                 for (idx, u) in r {
                     let width = (total * *u as f32 / cols - gap).max(44.0);
                     let sel = self.keyboards[i].sel == Some(*idx);
+                    let pressed = self.pressed.contains_key(idx);
                     let assignment = self.keyboards[i].assignment(*idx).clone();
-                    let resp = key_cap(ui, Vec2::new(width, height), sel, &assignment, lang);
+                    let resp = key_cap(ui, Vec2::new(width, height), sel, pressed, &assignment, lang);
                     if resp.clicked() {
                         self.keyboards[i].sel = Some(*idx);
                     }
@@ -716,11 +757,21 @@ fn assignment_frames(control: u8, layer: u8, a: &Assignment) -> Result<Vec<[u8; 
 /// Клавиша на карте: подпись действия и род действия мелко; выбранная — рамка и
 /// подложка акцента (STYLE.md §7 «Элементы»). Рисуется на выделенном прямоугольнике,
 /// чтобы клавиша держала ширину клетки раскладки.
-fn key_cap(ui: &mut Ui, size: Vec2, selected: bool, assignment: &Assignment, lang: Lang) -> egui::Response {
+fn key_cap(
+    ui: &mut Ui,
+    size: Vec2,
+    selected: bool,
+    pressed: bool,
+    assignment: &Assignment,
+    lang: Lang,
+) -> egui::Response {
     let p = Palette::of(ui);
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
     let hovered = response.hovered();
-    let (fill, stroke, stroke_w, main_color) = if selected {
+    // Нажатая сейчас клавиша — самое яркое на карте: заливка акцентом.
+    let (fill, stroke, stroke_w, main_color) = if pressed {
+        (p.accent, p.accent, 1.0, p.on_accent)
+    } else if selected {
         (p.soft(p.accent), p.accent, 1.5, p.accent_text)
     } else if hovered {
         (p.hover, p.border_strong, 1.0, p.text)
